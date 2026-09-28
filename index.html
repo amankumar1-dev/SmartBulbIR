@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Smart Bulb IR Remote & Signal Lab</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: '#7C5CFF',
+            surface: '#12151F',
+            panel: '#1A1E2C',
+            accent: '#00F5A0'
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes irBlink {
+      0% { opacity: 0.2; transform: scale(1); box-shadow: 0 0 0 rgba(255, 60, 60, 0); }
+      50% { opacity: 1; transform: scale(1.3); box-shadow: 0 0 16px rgba(255, 60, 60, 0.95); }
+      100% { opacity: 0.2; transform: scale(1); box-shadow: 0 0 0 rgba(255, 60, 60, 0); }
+    }
+    .ir-active {
+      animation: irBlink 0.18s ease-in-out;
+    }
+    .bulb-glow {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1017;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2b3245;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-[#0A0C13] text-slate-100 min-h-screen flex flex-col font-sans select-none antialiased">
+
+  <!-- Navigation Bar -->
+  <header class="border-b border-slate-800/80 bg-surface/70 backdrop-blur-md sticky top-0 z-50 px-4 py-3">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-violet-500/25">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            Smart Bulb IR Remote
+            <span id="appModeBadge" class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Android IR</span>
+          </h1>
+          <p class="text-xs text-slate-400">NEC 38 kHz Infrared Signal & Visualizer</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div id="hardwareStatus" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-700/50 bg-emerald-950/30 text-emerald-300">
+          <span>📡</span><span id="hardwareStatusText">Checking IR…</span>
+        </div>
+        <button id="soundToggleBtn" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-800/60 hover:bg-slate-700 transition">
+          <span id="soundIcon">🔊</span>
+          <span id="soundLabel">Audio Feedback</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-6xl mx-auto w-full p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+
+    <!-- LEFT: Realistic Remote Control Body -->
+    <div class="lg:col-span-5 flex flex-col items-center">
+      <div class="w-full max-w-[340px] bg-gradient-to-b from-[#181C28] to-[#12141F] border border-slate-700/70 rounded-3xl p-5 shadow-2xl relative">
+        
+        <!-- Remote Top Emitter & Status -->
+        <div class="flex items-center justify-between mb-4 border-b border-slate-800/80 pb-3">
+          <div class="flex items-center gap-2">
+            <span id="irLed" class="w-3.5 h-3.5 rounded-full bg-red-600/40 border border-red-500 inline-block transition-all"></span>
+            <span class="text-[11px] font-mono tracking-wider text-slate-400 uppercase">IR 38kHz TX</span>
+          </div>
+          <div class="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+            ONLINE
+          </div>
+        </div>
+
+        <!-- Power & Brightness Header -->
+        <div class="grid grid-cols-4 gap-2 mb-3">
+          <button data-code="BRIGHT_UP" class="remote-btn bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-xs font-semibold py-2.5 rounded-xl border border-slate-700 transition flex flex-col items-center justify-center">
+            <span class="text-amber-400 text-sm">☀+</span>
+            <span class="text-[10px] text-slate-300">Bright</span>
+          </button>
+          <button data-code="BRIGHT_DOWN" class="remote-btn bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-xs font-semibold py-2.5 rounded-xl border border-slate-700 transition flex flex-col items-center justify-center">
+            <span class="text-amber-400 text-sm">☀−</span>
+            <span class="text-[10px] text-slate-300">Dim</span>
+          </button>
+          <button data-code="POWER_OFF" class="remote-btn bg-red-950/70 hover:bg-red-900 border border-red-800/60 active:scale-95 text-xs font-bold py-2.5 rounded-xl transition flex flex-col items-center justify-center text-red-200">
+            <span class="text-sm">⏻</span>
+            <span class="text-[10px]">OFF</span>
+          </button>
+          <button data-code="POWER_ON" class="remote-btn bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-800/60 active:scale-95 text-xs font-bold py-2.5 rounded-xl transition flex flex-col items-center justify-center text-emerald-200">
+            <span class="text-sm">⏻</span>
+            <span class="text-[10px]">ON</span>
+          </button>
+        </div>
+
+        <!-- 4x4 Color Pad Grid -->
+        <div class="mb-3">
+          <div class="text-[11px] font-mono uppercase text-slate-400 mb-1.5 px-1 tracking-wider">Color Matrix</div>
+          <div class="grid grid-cols-4 gap-2">
+            <!-- Row 1: Primary Colors -->
+            <button data-code="RED" class="remote-btn bg-red-600 hover:brightness-110 active:scale-95 text-white font-bold h-11 rounded-xl shadow-md shadow-red-950 flex items-center justify-center text-xs">R</button>
+            <button data-code="GREEN" class="remote-btn bg-green-600 hover:brightness-110 active:scale-95 text-white font-bold h-11 rounded-xl shadow-md shadow-green-950 flex items-center justify-center text-xs">G</button>
+            <button data-code="BLUE" class="remote-btn bg-blue-600 hover:brightness-110 active:scale-95 text-white font-bold h-11 rounded-xl shadow-md shadow-blue-950 flex items-center justify-center text-xs">B</button>
+            <button data-code="WHITE" class="remote-btn bg-slate-100 hover:brightness-110 active:scale-95 text-slate-900 font-bold h-11 rounded-xl shadow-md flex items-center justify-center text-xs">W</button>
+
+            <!-- Row 2 -->
+            <button data-code="ORANGE_1" class="remote-btn bg-orange-500 hover:brightness-110 active:scale-95 text-white font-semibold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="GREEN_1" class="remote-btn bg-emerald-500 hover:brightness-110 active:scale-95 text-white font-semibold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="BLUE_1" class="remote-btn bg-sky-500 hover:brightness-110 active:scale-95 text-white font-semibold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="FLASH" class="remote-btn bg-purple-900/60 border border-purple-600/40 hover:bg-purple-800 active:scale-95 text-purple-200 font-bold h-11 rounded-xl text-[11px] flex items-center justify-center">FLASH</button>
+
+            <!-- Row 3 -->
+            <button data-code="ORANGE_2" class="remote-btn bg-amber-500 hover:brightness-110 active:scale-95 text-white font-semibold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="TEAL_1" class="remote-btn bg-teal-500 hover:brightness-110 active:scale-95 text-white font-semibold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="INDIGO_1" class="remote-btn bg-indigo-500 hover:brightness-110 active:scale-95 text-white font-semibold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="STROBE" class="remote-btn bg-purple-900/60 border border-purple-600/40 hover:bg-purple-800 active:scale-95 text-purple-200 font-bold h-11 rounded-xl text-[11px] flex items-center justify-center">STROBE</button>
+
+            <!-- Row 4 -->
+            <button data-code="YELLOW" class="remote-btn bg-yellow-400 hover:brightness-110 active:scale-95 text-slate-900 font-bold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="CYAN" class="remote-btn bg-cyan-400 hover:brightness-110 active:scale-95 text-slate-900 font-bold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="PURPLE" class="remote-btn bg-purple-600 hover:brightness-110 active:scale-95 text-white font-bold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="FADE" class="remote-btn bg-purple-900/60 border border-purple-600/40 hover:bg-purple-800 active:scale-95 text-purple-200 font-bold h-11 rounded-xl text-[11px] flex items-center justify-center">FADE</button>
+
+            <!-- Row 5 -->
+            <button data-code="PINK" class="remote-btn bg-rose-500 hover:brightness-110 active:scale-95 text-white font-bold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="LIME" class="remote-btn bg-lime-400 hover:brightness-110 active:scale-95 text-slate-900 font-bold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="MAGENTA" class="remote-btn bg-fuchsia-600 hover:brightness-110 active:scale-95 text-white font-bold h-11 rounded-xl text-xs flex items-center justify-center">●</button>
+            <button data-code="SMOOTH" class="remote-btn bg-purple-900/60 border border-purple-600/40 hover:bg-purple-800 active:scale-95 text-purple-200 font-bold h-11 rounded-xl text-[11px] flex items-center justify-center">SMOOTH</button>
+          </div>
+        </div>
+
+        <!-- Speaker Section -->
+        <div>
+          <div class="text-[11px] font-mono uppercase text-slate-400 mb-1.5 px-1 tracking-wider">Bulb Speaker Audio</div>
+          <div class="grid grid-cols-3 gap-2">
+            <button data-code="VOL_DOWN" class="remote-btn bg-slate-800/90 hover:bg-slate-700 active:scale-95 py-2.5 rounded-xl border border-slate-700 text-xs font-medium flex items-center justify-center gap-1">
+              <span>🔉</span> Vol −
+            </button>
+            <button data-code="VOL_UP" class="remote-btn bg-slate-800/90 hover:bg-slate-700 active:scale-95 py-2.5 rounded-xl border border-slate-700 text-xs font-medium flex items-center justify-center gap-1">
+              <span>🔊</span> Vol +
+            </button>
+            <button data-code="MUTE" class="remote-btn bg-slate-800/90 hover:bg-slate-700 active:scale-95 py-2.5 rounded-xl border border-slate-700 text-xs font-medium flex items-center justify-center gap-1">
+              <span>🔇</span> Mute
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT: Live Virtual Bulb Preview & Signal Inspector -->
+    <div class="lg:col-span-7 flex flex-col gap-6">
+
+      <!-- Virtual Lamp Visualizer Room -->
+      <div class="bg-surface border border-slate-800 rounded-3xl p-6 relative overflow-hidden flex flex-col items-center justify-center min-h-[300px]">
+        <!-- Ambient Wall Glow Background -->
+        <div id="ambientGlow" class="bulb-glow absolute inset-0 pointer-events-none opacity-40 bg-radial from-amber-400/30 via-transparent to-transparent"></div>
+
+        <!-- Virtual Bulb Graphic -->
+        <div class="relative z-10 flex flex-col items-center">
+          <!-- Bulb Socket / Base -->
+          <div class="w-16 h-8 bg-gradient-to-r from-slate-400 via-slate-200 to-slate-400 rounded-t-lg shadow-md border-b border-slate-500"></div>
+          
+          <!-- Bulb Glass Shell with dynamic color & glow -->
+          <div id="bulbDome" class="bulb-glow w-36 h-36 rounded-full bg-amber-300 relative flex items-center justify-center shadow-[0_0_80px_rgba(251,191,36,0.85)] border-2 border-white/50">
+            <!-- Filament / Internal LED Cluster -->
+            <div id="filament" class="w-12 h-12 rounded-full bg-white/90 blur-[2px] transition-all"></div>
+          </div>
+          
+          <!-- Speaker grille under dome -->
+          <div class="w-24 h-6 bg-slate-800 rounded-b-xl border border-slate-700 flex items-center justify-center gap-1 px-3 mt-[-2px] shadow-inner">
+            <span class="w-1 h-1 rounded-full bg-slate-500"></span>
+            <span class="w-1 h-1 rounded-full bg-slate-500"></span>
+            <span class="w-1 h-1 rounded-full bg-slate-500"></span>
+            <span class="w-1 h-1 rounded-full bg-slate-500"></span>
+            <span class="w-1 h-1 rounded-full bg-slate-500"></span>
+          </div>
+        </div>
+
+        <!-- Current Bulb Stats -->
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-3 z-10">
+          <div class="px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/80 text-xs font-mono">
+            State: <span id="statPower" class="text-emerald-400 font-bold">ON</span>
+          </div>
+          <div class="px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/80 text-xs font-mono">
+            Brightness: <span id="statBrightness" class="text-amber-300 font-bold">100%</span>
+          </div>
+          <div class="px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/80 text-xs font-mono">
+            Active Mode: <span id="statMode" class="text-violet-300 font-bold">Static Color</span>
+          </div>
+          <div class="px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/80 text-xs font-mono">
+            Volume: <span id="statVolume" class="text-sky-300 font-bold">70%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-Time IR Signal Inspector & Code Exporter -->
+      <div class="bg-surface border border-slate-800 rounded-3xl p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div class="flex items-center gap-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-violet-400"></div>
+            <h2 class="text-sm font-bold tracking-tight text-white uppercase font-mono">IR Protocol Packet Inspector</h2>
+          </div>
+          <button id="copyPulseBtn" class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1 font-mono">
+            <span>📋</span> Copy Timings
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+          <div class="p-2.5 bg-slate-900/70 border border-slate-800 rounded-xl">
+            <div class="text-slate-400 text-[10px] uppercase">Protocol</div>
+            <div class="text-white font-bold mt-0.5">NEC (32-bit)</div>
+          </div>
+          <div class="p-2.5 bg-slate-900/70 border border-slate-800 rounded-xl">
+            <div class="text-slate-400 text-[10px] uppercase">Carrier Frequency</div>
+            <div class="text-emerald-400 font-bold mt-0.5" id="dispFreq">38,000 Hz</div>
+          </div>
+          <div class="p-2.5 bg-slate-900/70 border border-slate-800 rounded-xl">
+            <div class="text-slate-400 text-[10px] uppercase">NEC Hex Code</div>
+            <div class="text-amber-400 font-bold mt-0.5" id="dispHex">0x00F7C03F</div>
+          </div>
+          <div class="p-2.5 bg-slate-900/70 border border-slate-800 rounded-xl">
+            <div class="text-slate-400 text-[10px] uppercase">Command Name</div>
+            <div class="text-violet-300 font-bold mt-0.5" id="dispName">POWER_ON</div>
+          </div>
+        </div>
+
+        <!-- Microsecond Pulse Pattern -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[11px] font-mono text-slate-400 uppercase">ConsumerIrManager Timing Array (Microseconds [µs]):</label>
+          <div id="pulseArrayDisp" class="w-full bg-[#0B0D14] border border-slate-800 text-slate-300 text-xs font-mono p-3 rounded-xl max-h-24 overflow-y-auto break-all select-all leading-relaxed">
+            9000, 4500, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560, 1690, 560
+          </div>
+        </div>
+
+        <!-- Custom Signal Tester -->
+        <div class="border-t border-slate-800/80 pt-3 flex flex-col gap-2">
+          <div class="text-[11px] font-mono uppercase text-slate-400">Custom Pulse Tester</div>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input id="customHexInput" type="text" placeholder="Enter 32-bit Hex (e.g. 0x00F7A05F)" class="flex-1 bg-slate-900 border border-slate-700/80 text-white text-xs font-mono px-3 py-2 rounded-xl focus:outline-none focus:border-violet-500" />
+            <button id="sendCustomBtn" class="bg-violet-600 hover:bg-violet-500 active:scale-95 text-white text-xs font-semibold px-4 py-2 rounded-xl transition">
+              Simulate Transmit
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <footer class="border-t border-slate-800/60 bg-surface/40 py-3 px-4 text-center text-xs text-slate-500 font-mono">
+    Standard 24-key RGB speaker bulb protocol mapping (Address: 0x00F7, 38 kHz NEC Pulse-Distance).
+  </footer>
+
+  <!-- Application Logic -->
+  <script>
+    // State
+    const state = {
+      power: true,
+      brightness: 1.0, // 0.1 to 1.0
+      currentColor: '#f59e0b',
+      mode: 'static', // static, flash, strobe, fade, smooth
+      volume: 70,
+      muted: false,
+      audioFeedback: true
+    };
+
+    // Mode interval runner
+    let modeInterval = null;
+
+    // Standard 24-key IR Codes (Address 0x00F7)
+    const codeBook = {
+      POWER_ON:    { hex: 0x00F7C03F, action: () => setPower(true) },
+      POWER_OFF:   { hex: 0x00F740BF, action: () => setPower(false) },
+      BRIGHT_UP:   { hex: 0x00F700FF, action: () => adjustBrightness(0.15) },
+      BRIGHT_DOWN: { hex: 0x00F7807F, action: () => adjustBrightness(-0.15) },
+      
+      RED:         { hex: 0x00F720DF, action: () => setColor('#ef4444') },
+      GREEN:       { hex: 0x00F7A05F, action: () => setColor('#22c55e') },
+      BLUE:        { hex: 0x00F7609F, action: () => setColor('#3b82f6') },
+      WHITE:       { hex: 0x00F7E01F, action: () => setColor('#ffffff') },
+
+      ORANGE_1:    { hex: 0x00F730CF, action: () => setColor('#f97316') },
+      GREEN_1:     { hex: 0x00F7B04F, action: () => setColor('#10b981') },
+      BLUE_1:      { hex: 0x00F7708F, action: () => setColor('#0ea5e9') },
+      FLASH:       { hex: 0x00F7D02F, action: () => startMode('flash') },
+
+      ORANGE_2:    { hex: 0x00F710EF, action: () => setColor('#f59e0b') },
+      TEAL_1:      { hex: 0x00F7906F, action: () => setColor('#14b8a6') },
+      INDIGO_1:    { hex: 0x00F750AF, action: () => setColor('#6366f1') },
+      STROBE:      { hex: 0x00F7F00F, action: () => startMode('strobe') },
+
+      YELLOW:      { hex: 0x00F738C7, action: () => setColor('#eab308') },
+      CYAN:        { hex: 0x00F7B847, action: () => setColor('#06b6d4') },
+      PURPLE:      { hex: 0x00F77887, action: () => setColor('#a855f7') },
+      FADE:        { hex: 0x00F7C837, action: () => startMode('fade') },
+
+      PINK:        { hex: 0x00F728D7, action: () => setColor('#ec4899') },
+      LIME:        { hex: 0x00F7A857, action: () => setColor('#84cc16') },
+      MAGENTA:     { hex: 0x00F76897, action: () => setColor('#d946ef') },
+      SMOOTH:      { hex: 0x00F7E817, action: () => startMode('smooth') },
+
+      VOL_UP:      { hex: 0x00F79867, action: () => adjustVolume(10) },
+      VOL_DOWN:    { hex: 0x00F758A7, action: () => adjustVolume(-10) },
+      MUTE:        { hex: 0x00F718E7, action: () => toggleMute() }
+    };
+
+    // Synthesize NEC Pulse-Distance Array (Microseconds)
+    function necToPattern(hex) {
+      const p = [9000, 4500]; // 9ms mark, 4.5ms space leader
+      for (let i = 31; i >= 0; i--) {
+        const bit = (hex >>> i) & 1;
+        p.push(560); // 560us mark
+        p.push(bit === 1 ? 1690 : 560); // 1690us space for 1, 560us for 0
+      }
+      p.push(560); // stop bit
+      return p;
+    }
+
+    // Audio Feedback using Web Audio API
+    let audioCtx = null;
+    function playBeep(freq = 880, dur = 0.05) {
+      if (!state.audioFeedback) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + dur);
+      } catch (e) {
+        console.warn('Audio not available', e);
+      }
+    }
+
+    // Flash the IR Emitter LED
+    function flashIrLed() {
+      const led = document.getElementById('irLed');
+      led.classList.remove('ir-active');
+      void led.offsetWidth; // Trigger reflow
+      led.classList.add('ir-active');
+      
+      // Haptic feedback on Android/iOS phones
+      if (navigator.vibrate) {
+        navigator.vibrate(15);
+      }
+    }
+
+    // Update the Lamp and Ambient glow
+    function renderBulb() {
+      const dome = document.getElementById('bulbDome');
+      const glow = document.getElementById('ambientGlow');
+      const filament = document.getElementById('filament');
+      const statPower = document.getElementById('statPower');
+      const statBright = document.getElementById('statBrightness');
+      const statMode = document.getElementById('statMode');
+      const statVolume = document.getElementById('statVolume');
+
+      if (!state.power) {
+        dome.style.backgroundColor = '#1e2230';
+        dome.style.boxShadow = 'none';
+        dome.style.borderColor = 'rgba(255,255,255,0.1)';
+        glow.style.opacity = '0';
+        filament.style.opacity = '0';
+        statPower.textContent = 'OFF';
+        statPower.className = 'text-red-400 font-bold';
+        statBright.textContent = '0%';
+        return;
+      }
+
+      statPower.textContent = 'ON';
+      statPower.className = 'text-emerald-400 font-bold';
+      statBright.textContent = Math.round(state.brightness * 100) + '%';
+      statMode.textContent = state.mode.charAt(0).toUpperCase() + state.mode.slice(1);
+      statVolume.textContent = state.muted ? 'MUTED' : state.volume + '%';
+
+      const color = state.currentColor;
+      const b = state.brightness;
+
+      dome.style.backgroundColor = color;
+      dome.style.opacity = Math.max(0.3, b);
+      dome.style.borderColor = 'rgba(255,255,255,0.7)';
+      dome.style.boxShadow = `0 0 ${Math.round(80 * b)}px ${color}, inset 0 0 20px rgba(255,255,255,0.8)`;
+      
+      glow.style.opacity = (b * 0.45).toString();
+      glow.style.background = `radial-gradient(circle at center, ${color} 0%, transparent 70%)`;
+      filament.style.opacity = b.toString();
+    }
+
+    // Core Controls
+    function setPower(on) {
+      state.power = on;
+      stopMode();
+      renderBulb();
+    }
+
+    function adjustBrightness(delta) {
+      if (!state.power) return;
+      state.brightness = Math.min(1.0, Math.max(0.15, state.brightness + delta));
+      renderBulb();
+    }
+
+    function setColor(hex) {
+      state.power = true;
+      stopMode();
+      state.mode = 'static';
+      state.currentColor = hex;
+      renderBulb();
+    }
+
+    function adjustVolume(delta) {
+      state.muted = false;
+      state.volume = Math.min(100, Math.max(0, state.volume + delta));
+      renderBulb();
+    }
+
+    function toggleMute() {
+      state.muted = !state.muted;
+      renderBulb();
+    }
+
+    function stopMode() {
+      if (modeInterval) {
+        clearInterval(modeInterval);
+        modeInterval = null;
+      }
+    }
+
+    function startMode(modeName) {
+      state.power = true;
+      stopMode();
+      state.mode = modeName;
+
+      const palette = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4'];
+      let idx = 0;
+
+      if (modeName === 'flash') {
+        modeInterval = setInterval(() => {
+          state.currentColor = palette[idx % palette.length];
+          idx++;
+          renderBulb();
+        }, 350);
+      } else if (modeName === 'strobe') {
+        let strobeOn = true;
+        modeInterval = setInterval(() => {
+          state.currentColor = strobeOn ? '#ffffff' : '#111827';
+          strobeOn = !strobeOn;
+          renderBulb();
+        }, 120);
+      } else if (modeName === 'fade') {
+        let hue = 0;
+        modeInterval = setInterval(() => {
+          hue = (hue + 12) % 360;
+          state.currentColor = `hsl(${hue}, 100%, 55%)`;
+          renderBulb();
+        }, 200);
+      } else if (modeName === 'smooth') {
+        let hue = 0;
+        modeInterval = setInterval(() => {
+          hue = (hue + 4) % 360;
+          state.currentColor = `hsl(${hue}, 90%, 50%)`;
+          renderBulb();
+        }, 100);
+      }
+
+      renderBulb();
+    }
+
+    // Android native IR bridge.
+    // The WebView calls AndroidIR.transmit(hex, frequency) when the APK provides it.
+    function nativeTransmit(hex, frequency = 38000) {
+      try {
+        if (window.AndroidIR && typeof window.AndroidIR.transmit === 'function') {
+          return window.AndroidIR.transmit(String(hex >>> 0), Number(frequency));
+        }
+      } catch (e) {
+        console.warn('Native IR transmit failed', e);
+      }
+      return false;
+    }
+
+    function updateHardwareStatus() {
+      const el = document.getElementById('hardwareStatusText');
+      const box = document.getElementById('hardwareStatus');
+      if (window.AndroidIR && typeof window.AndroidIR.hasIrEmitter === 'function') {
+        const ok = !!window.AndroidIR.hasIrEmitter();
+        el.textContent = ok ? 'IR Ready' : 'No IR emitter';
+        box.className = ok
+          ? 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-emerald-700/50 bg-emerald-950/30 text-emerald-300'
+          : 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-red-700/50 bg-red-950/30 text-red-300';
+      } else {
+        el.textContent = 'Browser mode';
+        box.className = 'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-700/50 bg-amber-950/30 text-amber-300';
+      }
+    }
+
+    // Trigger Code Transmission
+    function transmit(key, hexVal = null) {
+      flashIrLed();
+      playBeep(920, 0.04);
+
+      let hex = hexVal;
+      let name = key;
+
+      if (codeBook[key]) {
+        hex = codeBook[key].hex;
+        codeBook[key].action();
+      }
+
+      if (hex !== null) {
+        // Send the exact same NEC timing array through Android's ConsumerIrManager.
+        // Browser mode still works as a simulator when AndroidIR is unavailable.
+        nativeTransmit(hex, 38000);
+
+        const hexStr = '0x' + (hex >>> 0).toString(16).toUpperCase().padStart(8, '0');
+        const pattern = necToPattern(hex);
+
+        document.getElementById('dispName').textContent = name;
+        document.getElementById('dispHex').textContent = hexStr;
+        document.getElementById('pulseArrayDisp').textContent = pattern.join(', ');
+      }
+    }
+
+    // Attach Event Listeners to Remote Buttons
+    document.querySelectorAll('.remote-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const code = btn.getAttribute('data-code');
+        if (code) transmit(code);
+      });
+    });
+
+    // Custom Hex Simulator
+    document.getElementById('sendCustomBtn').addEventListener('click', () => {
+      const input = document.getElementById('customHexInput').value.trim();
+      let hex = parseInt(input, 16);
+      if (isNaN(hex)) {
+        alert('Please enter a valid Hex value, e.g. 0x00F7A05F');
+        return;
+      }
+      transmit('CUSTOM_CODE', hex);
+    });
+
+    // Copy Pulse Timings
+    document.getElementById('copyPulseBtn').addEventListener('click', () => {
+      const text = document.getElementById('pulseArrayDisp').textContent.trim();
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyPulseBtn');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<span>✅</span> Copied!';
+        setTimeout(() => btn.innerHTML = orig, 1800);
+      });
+    });
+
+    // Sound Toggle
+    document.getElementById('soundToggleBtn').addEventListener('click', () => {
+      state.audioFeedback = !state.audioFeedback;
+      document.getElementById('soundIcon').textContent = state.audioFeedback ? '🔊' : '🔇';
+      document.getElementById('soundLabel').textContent = state.audioFeedback ? 'Audio Feedback' : 'Muted';
+    });
+
+    // Initial Render
+    renderBulb();
+    updateHardwareStatus();
+  </script>
+</body>
+</html>
